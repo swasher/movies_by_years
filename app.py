@@ -37,11 +37,8 @@ df.columns = ["Seen", "Date", "Title", "Year"]
 df.loc[df.Seen == 'Буду смотреть', 'Seen'] = 0
 df.loc[pd.isna(df['Seen']), 'Seen'] = 1
 
-# TODO
 # в поле Date нам не нужна дата, нужен только год, так что заменяем дату на год
-# air_quality["london_mg_per_cubic"] = air_quality["station_london"] * 1.882
-df['record_year'] = datetime.strptime(df['Date'], "%Y-%m-%d %H:%M:%S").year
-df.apply(func, result_type=expand)
+df['Date'] = df.apply(lambda x: datetime.strptime(x.Date, "%Y-%m-%d %H:%M:%S").year, axis=1)
 
 # temp
 df = df.sort_values('Year')
@@ -51,30 +48,50 @@ df = df.sort_values('Year')
 # or - check speed
 df.drop(df.loc[df['Year']=='0'].index, inplace=True)
 
+df = df.iloc[range(0, 15)]
+
+grouped = df.groupby('Year').agg(
+    # Year=pd.NamedAgg(column='Year'),
+    Total=pd.NamedAgg(column='Seen', aggfunc='count'),  # тотал считает всего - правильно!
+    Seen=pd.NamedAgg(column='Seen', aggfunc='sum'),     # sum считает сумму - т.е. кол-во едениц - получется кол-во просмотренных - правильно!
+)
+
+grouped['Notseen'] = grouped['Total'] - grouped['Seen']
+
+# На данном этапе мы имеем примерно следующее:
+#       Total   Seen    Notseen
+# 1965  1       1       0
+# 1967  2       0       2
+
+# Переворачиваем, чтобы по оси X у нас были года
+grouped = grouped.T
+grouped = grouped.rename_axis('Year', axis="columns")
+
+fig = px.bar(df, x='Year', y='Seen')
 
 # Находим минимальный и максимальный года в Date - мы будем строить отчеты для каждого из этих годов
-date_min = min(df['Date'])
-date_max = max(df['Date'])
-year_min = str(datetime.strptime(date_min, "%Y-%m-%d %H:%M:%S").year)
-year_max = str(datetime.strptime(date_max, "%Y-%m-%d %H:%M:%S").year)
+year_min = min(df['Date'])
+year_max = max(df['Date'])
 
 # Находим самый старый фильм и текущий год
 oldest_movie = int(min(df['Year']))
 current_year = datetime.now().year
-print('CURENT YEAR'+str(current_year))
+print('CURRENT YEAR'+str(current_year))
 
 # TODO найти дубликаты
 
 # TODO что делать с двойными датами в years: для Шерлока, напр., 2010-2017 - ВЫЧИСЛЯТЬ СРЕДНЕЕ АРИФМЕТИЧЕСКОЕ
 
+# TODO сделать новую таблицу, содержащую год-просмотрено-непросмотрено и далее функцию, которая генерит такие таблицы на каждый мой год
+
+# my_years = pd.DataFrame({})
 
 # Подсчитать, сколько просмотрено/непросмотрено фильмов, выпущенных в определенном году
 # df[df['Seen'] == 0]['Year'].value_counts()
 
 
-
-for year in range(oldest_movie, current_year+1):
-    print(year)
+# for year in range(oldest_movie, current_year+1):
+#     print(year)
 
 
 def generate_table(dataframe, max_rows=40000):
@@ -90,6 +107,9 @@ def generate_table(dataframe, max_rows=40000):
     ])
 
 
+
+
+
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 
@@ -97,17 +117,18 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 
 app.layout = html.Div(children=[
-    html.H4(children='min year: '+str(year_min)),
-    html.H4(children='max year: '+str(year_max)),
-    html.H4(children='oldest movie: '+str(oldest_movie)),
-    html.H4(children='current year: '+str(current_year)),
-    html.H1(children='Movie list'),
+    html.Plaintext(children='min year: '+str(year_min)+', max year: '+str(year_max)),
+    html.Plaintext(children='oldest movie: '+str(oldest_movie)+', current year: '+str(current_year)),
 
-    # html.Div(children='''
-    #     Dash: A web application framework for Python.
-    # '''),
-
+    html.H5(children='DF table'),
     generate_table(df),
+    html.H5(children='GROUPED table'),
+    generate_table(grouped),
+
+    dcc.Graph(
+        id='Test graph',
+        figure=fig
+    )
 
     # html.H1(children='Movie vote'),
     # generate_table(movie_vote)
