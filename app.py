@@ -3,6 +3,11 @@
 # Run this app with `python app.py` and
 # visit http://127.0.0.1:8050/ in your web browser.
 
+
+# TODO найти фильмы-дубликаты
+
+
+import statistics
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
@@ -40,7 +45,7 @@ df.loc[pd.isna(df['Seen']), 'Seen'] = 1
 # в поле Date нам не нужна дата, нужен только год, так что заменяем дату на год
 df['Date'] = df.apply(lambda x: datetime.strptime(x.Date, "%Y-%m-%d %H:%M:%S").year, axis=1)
 
-# temp
+# сортировка - в продакшене не нужна
 df = df.sort_values('Year')
 
 # удаляем записи, где год=0 (это багованые строки)
@@ -48,7 +53,31 @@ df = df.sort_values('Year')
 # or - check speed
 df.drop(df.loc[df['Year']=='0'].index, inplace=True)
 
-df = df.iloc[range(0, 15)]
+
+# df = df.iloc[range(0, 15)]
+def int_or_mean(x):
+    """
+    В таблице попадаются года типа 2010-2016 - типа если сериал шел несколько лет
+    TODO тут говнокод, нужно проверку сделать на входящие значения
+    :param x: 2010-2016 или 2015
+    :return:
+    """
+    if x.isnumeric():
+        return x
+    else:
+        return str(
+            int(
+                (int(x[:4]) + int(x[5:]))/2
+            )
+        )
+
+# TODO что делать с двойными датами в years: для Шерлока, напр., 2010-2017 - ВЫЧИСЛЯТЬ СРЕДНЕЕ АРИФМЕТИЧЕСКОЕ
+df['Year'] = df['Year'].apply(lambda x: int_or_mean(x))
+
+
+
+# TEST PURPOSE - чтобы уменьшить размер таблицы для тестов
+#df = df.iloc[range(0, 15)]
 
 grouped = df.groupby('Year').agg(
     # Year=pd.NamedAgg(column='Year'),
@@ -63,11 +92,24 @@ grouped['Notseen'] = grouped['Total'] - grouped['Seen']
 # 1965  1       1       0
 # 1967  2       0       2
 
-# Переворачиваем, чтобы по оси X у нас были года
-grouped = grouped.T
-grouped = grouped.rename_axis('Year', axis="columns")
 
-fig = px.bar(df, x='Year', y='Seen')
+# годы, как нарисовано чуть выше - это не значения, а "имена столбцов". Чтобы годы стали значениями - применяем reset_index, получаем следующее:
+#       Year    Total   Seen    Notseen
+# 0     1965    1       1       0
+# 1     1967    2       0       2
+grouped.reset_index(inplace=True)
+
+
+
+
+def fig(grouped, year):
+    sliced = grouped.loc(grouped['Date']<str(year))
+    fig = px.bar(sliced, x='Year', y=['Seen', 'Total'])
+    return fig
+
+
+
+
 
 # Находим минимальный и максимальный года в Date - мы будем строить отчеты для каждого из этих годов
 year_min = min(df['Date'])
@@ -78,11 +120,12 @@ oldest_movie = int(min(df['Year']))
 current_year = datetime.now().year
 print('CURRENT YEAR'+str(current_year))
 
-# TODO найти дубликаты
 
-# TODO что делать с двойными датами в years: для Шерлока, напр., 2010-2017 - ВЫЧИСЛЯТЬ СРЕДНЕЕ АРИФМЕТИЧЕСКОЕ
 
-# TODO сделать новую таблицу, содержащую год-просмотрено-непросмотрено и далее функцию, которая генерит такие таблицы на каждый мой год
+
+
+
+
 
 # my_years = pd.DataFrame({})
 
@@ -115,25 +158,43 @@ external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
+from itertools import chain
 
 app.layout = html.Div(children=[
     html.Plaintext(children='min year: '+str(year_min)+', max year: '+str(year_max)),
     html.Plaintext(children='oldest movie: '+str(oldest_movie)+', current year: '+str(current_year)),
 
-    html.H5(children='DF table'),
-    generate_table(df),
-    html.H5(children='GROUPED table'),
-    generate_table(grouped),
+    # html.H5(children='DF table'),
+    # generate_table(df),
+    # html.H5(children='GROUPED table'),
+    # generate_table(grouped),
 
-    dcc.Graph(
-        id='Test graph',
-        figure=fig
-    )
+    # dcc.Graph(
+    #         id='Test graph',
+    #         figure=fig
+    #     )
 
     # html.H1(children='Movie vote'),
     # generate_table(movie_vote)
 
-])
+] + list(chain.from_iterable([html.H1(children=str(year)+' Year'), dcc.Graph(id=str(year) + ' Year', figure=fig(grouped, year))] for year in range(year_min, year_max)))
+)
+
+# пример как создать layout
+# app.layout = html.Div(
+#     [dcc.Input(id=column, value=column) for column in columns]
+#     + [html.Button("Save", id="save"), dcc.Store(id="cache", data=[]), table])
+
+
+# dcc_graph_stack = []
+#
+# for y in range(1, 4):
+#     g = dcc.Graph(
+#         id='Test graph',
+#         figure=fig
+#     )
+#     dcc_graph_stack.append(g)
+
 
 if __name__ == '__main__':
     app.run_server(debug=True)
