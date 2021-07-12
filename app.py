@@ -5,20 +5,23 @@
 
 
 # TODO найти фильмы-дубликаты
+# TODO очень много значений показывает на графиках seen=unseen, похоже на глюк
 
 
-import statistics
+from itertools import chain
 import dash
+import codecs
 import dash_core_components as dcc
 import dash_html_components as html
 import plotly.express as px
 import pandas as pd
 from datetime import datetime
+from util import generate_table
+from util import int_or_mean
 
 
-import codecs
-doc_list = codecs.open('csv/backup_76444_movie_list.csv','rU','UTF-16')
-doc_vote = codecs.open('csv/backup_76444_votes.csv','rU','UTF-16')
+doc_list = codecs.open('csv/backup_76444_movie_list.csv', 'rU', 'UTF-16')
+doc_vote = codecs.open('csv/backup_76444_votes.csv', 'rU', 'UTF-16')
 
 # Экспорт кинориума так устроен, что мы не можем получить в одном csv и проспотренные и непросмотренные.
 # Поэтому мы используем две таблицы: LIST - это экспорт всех списков кинориума, нас интересует только один из них - "Буду смотреть"
@@ -54,24 +57,8 @@ df = df.sort_values('Year')
 df.drop(df.loc[df['Year']=='0'].index, inplace=True)
 
 
-# df = df.iloc[range(0, 15)]
-def int_or_mean(x):
-    """
-    В таблице попадаются года типа 2010-2016 - типа если сериал шел несколько лет
-    TODO тут говнокод, нужно проверку сделать на входящие значения
-    :param x: 2010-2016 или 2015
-    :return:
-    """
-    if x.isnumeric():
-        return x
-    else:
-        return str(
-            int(
-                (int(x[:4]) + int(x[5:]))/2
-            )
-        )
 
-# TODO что делать с двойными датами в years: для Шерлока, напр., 2010-2017 - ВЫЧИСЛЯТЬ СРЕДНЕЕ АРИФМЕТИЧЕСКОЕ
+# двойные даты в years: для Шерлока, напр., 2010-2017 - ВЫЧИСЛЯЕМ СРЕДНЕЕ АРИФМЕТИЧЕСКОЕ
 df['Year'] = df['Year'].apply(lambda x: int_or_mean(x))
 
 
@@ -79,41 +66,43 @@ df['Year'] = df['Year'].apply(lambda x: int_or_mean(x))
 # TEST PURPOSE - чтобы уменьшить размер таблицы для тестов
 #df = df.iloc[range(0, 15)]
 
-grouped = df.groupby('Year').agg(
-    # Year=pd.NamedAgg(column='Year'),
-    Total=pd.NamedAgg(column='Seen', aggfunc='count'),  # тотал считает всего - правильно!
-    Seen=pd.NamedAgg(column='Seen', aggfunc='sum'),     # sum считает сумму - т.е. кол-во едениц - получется кол-во просмотренных - правильно!
-)
 
-grouped['Notseen'] = grouped['Total'] - grouped['Seen']
+def make_grouped(df, slice_by_year):
+    """
+    Берет "сырой" dataframe df и возвращает датафрейм для графика (см. ниже), обрезанный по году,
+    типа, "какое было состояние просмотров в таком-то году"
+    :param df:
+    :param year:
+    :return:
+    """
+    sliced = df[df.Date <= slice_by_year]
 
-# На данном этапе мы имеем примерно следующее:
-#       Total   Seen    Notseen
-# 1965  1       1       0
-# 1967  2       0       2
+    grouped = sliced.groupby('Year').agg(
+        # Year=pd.NamedAgg(column='Year'),
+        Total=pd.NamedAgg(column='Seen', aggfunc='count'),  # тотал считает seen+unseen - правильно!
+        Seen=pd.NamedAgg(column='Seen', aggfunc='sum'),     # sum считает сумму - т.е. кол-во едениц - получется кол-во просмотренных - правильно!
+    )
 
+    grouped['Notseen'] = grouped['Total'] - grouped['Seen']
 
-# годы, как нарисовано чуть выше - это не значения, а "имена столбцов". Чтобы годы стали значениями - применяем reset_index, получаем следующее:
-#       Year    Total   Seen    Notseen
-# 0     1965    1       1       0
-# 1     1967    2       0       2
-grouped.reset_index(inplace=True)
+    # На данном этапе мы имеем примерно следующее:
+    #       Total   Seen    Notseen
+    # 1965  1       1       0
+    # 1967  2       0       2
 
+    # годы, как нарисовано чуть выше - это не значения, а "имена столбцов". Чтобы годы стали значениями - применяем reset_index, получаем следующее:
+    #       Year    Total   Seen    Notseen
+    # 0     1965    1       1       0
+    # 1     1967    2       0       2
+    grouped.reset_index(inplace=True)
 
-
-
-def fig(grouped, year):
-    sliced = grouped.loc(grouped['Date']<str(year))
-    fig = px.bar(sliced, x='Year', y=['Seen', 'Total'])
-    return fig
-
-
-
+    return grouped
 
 
 # Находим минимальный и максимальный года в Date - мы будем строить отчеты для каждого из этих годов
 year_min = min(df['Date'])
 year_max = max(df['Date'])
+
 
 # Находим самый старый фильм и текущий год
 oldest_movie = int(min(df['Year']))
@@ -121,33 +110,20 @@ current_year = datetime.now().year
 print('CURRENT YEAR'+str(current_year))
 
 
+def fig(grouped, year):
+    grouped = make_grouped(grouped, year)
+    bar = px.bar(grouped, x='Year', y=['Seen', 'Total'])
+    bar.update_xaxes(title_text=str(year)+' YEAR')
+    bar.update_xaxes(title_font_size=20)
+    bar.update_layout(yaxis_range=[0, 600])
+    bar.update_layout(xaxis_range=[0, current_year-oldest_movie])
+    # bar.update_xaxes(range=[oldest_movie, current_year+1])
+    return bar
 
 
-
-
-
-
-# my_years = pd.DataFrame({})
 
 # Подсчитать, сколько просмотрено/непросмотрено фильмов, выпущенных в определенном году
 # df[df['Seen'] == 0]['Year'].value_counts()
-
-
-# for year in range(oldest_movie, current_year+1):
-#     print(year)
-
-
-def generate_table(dataframe, max_rows=40000):
-    return html.Table([
-        html.Thead(
-            html.Tr([html.Th(col) for col in dataframe.columns])
-        ),
-        html.Tbody([
-            html.Tr([
-                html.Td(dataframe.iloc[i][col]) for col in dataframe.columns
-            ]) for i in range(min(len(dataframe), max_rows))
-        ])
-    ])
 
 
 
@@ -158,7 +134,6 @@ external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
-from itertools import chain
 
 app.layout = html.Div(children=[
     html.Plaintext(children='min year: '+str(year_min)+', max year: '+str(year_max)),
@@ -177,7 +152,7 @@ app.layout = html.Div(children=[
     # html.H1(children='Movie vote'),
     # generate_table(movie_vote)
 
-] + list(chain.from_iterable([html.H1(children=str(year)+' Year'), dcc.Graph(id=str(year) + ' Year', figure=fig(grouped, year))] for year in range(year_min, year_max)))
+] + [dcc.Graph(id=str(year), figure=fig(df, year)) for year in range(year_min, year_max+1)]
 )
 
 # пример как создать layout
