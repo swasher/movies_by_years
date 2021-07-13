@@ -1,23 +1,53 @@
+"""
+Этот скрипт парсит страницы пользовательские кинопоиска, напрмер https://www.kinopoisk.ru/mykp/movies/list/type/3575/
+Вебстраницы нужно сохранять "полностью", иначе хром сохранит по 25 фильмов вместо 200.
+Страницы нужно поместить в папку (переменная htmldir), скрипт отпрарсит все файлы и сохранит туда csv
+"""
+
 from parsel import Selector
 import codecs
+from glob import glob
+import pandas as pd
 
-text = codecs.open("kinopoisk буду смотреть/1.html", "r", "utf-8").read()
-selector = Selector(text=text)
+from pathlib import Path
 
-ulli = selector.xpath('//ul[@id="itemList"]/li')
-# print(ulli)
-#
-# a1=ulli[0]
-# print(a1)
-# a2=ulli[1]
-# print('==================')
-# print(a2)
+htmldir = 'kinopoisk буду смотреть'
+p = Path(htmldir)
+files = list(p.glob('**/*.html'))
 
-count = 0
-for x  in ulli:
-    # movie = x.xpath("div[@class='info']/div/font/a/text()").get() # работает для сохраниний с 25 фильмами
-    movie = x.xpath("div[@class='info']/a/text()").get()
-    date_added = x.xpath("span/text()").get()[:10]
 
-    count += 1
-    print(count, date_added, movie)
+row_list = []
+for f in files:
+    text = codecs.open(f, "r", "utf-8").read()
+    selector = Selector(text=text)
+
+    ulli = selector.xpath('//ul[@id="itemList"]/li')
+    # print(ulli)
+    #
+    # a1=ulli[0]
+    # print(a1)
+    # a2=ulli[1]
+    # print('==================')
+    # print(a2)
+
+    for x in ulli:
+        """
+        Есть разные методы создания dataFrame. Но увеличивать Dataframe "row by row" является самым медленным.
+        Поэтому создаем dict и заполняем Dataframe одной командой.
+        https://stackoverflow.com/a/47979665/1334825 - SPEED PERFORMANCE
+        https://stackoverflow.com/a/62734983/1334825 - NEVER grow a DataFrame!
+        https://stackoverflow.com/a/17496530/1334825 - best method
+        """
+        d = {}
+        # movie = x.xpath("div[@class='info']/div/font/a/text()").get() # работает для сохраниний с 25 фильмами
+        d['movie'] = x.xpath("div[@class='info']/a/text()").get()
+        d['date_added'] = x.xpath("span/text()").get()[:10]
+        d['year'] = x.xpath("div[@class='info']/span/text()").re_first(r'(\d{4})')
+        d['orig_name'] = x.xpath("div[@class='info']/span/text()").re_first(r'.*\s*\(')[:-2]
+        d['number'] = x.xpath("div[@class='number']/text()").get()
+        print("{number:>4}  {year:<4}  {date_added:<10}  {movie:<34}  {orig_name:<30}".format(**d))
+        row_list.append(d)
+
+
+df = pd.DataFrame(row_list)
+df.to_csv(path_or_buf='csv/kinopoisk_unseen.csv', sep='\t')
