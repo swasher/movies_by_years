@@ -41,6 +41,8 @@ df = pd.concat([movie_list, movie_vote], axis=0)[["ListTitle", "Date", "Title", 
 # Переименовываем заголовки ListTitle -> Seen
 df.columns = ["Seen", "Date", "Title", "Year"]
 
+df.sort_values('Title').to_csv(path_or_buf='csv/analyz.csv')
+
 # Устанавливаем значения поля Seen в true или false
 df.loc[df.Seen == 'Буду смотреть', 'Seen'] = 0
 df.loc[pd.isna(df['Seen']), 'Seen'] = 1
@@ -138,19 +140,6 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 app.layout = html.Div(children=[
     html.Plaintext(children='min year: '+str(year_min)+', max year: '+str(year_max)),
     html.Plaintext(children='oldest movie: '+str(oldest_movie)+', current year: '+str(current_year)),
-
-    # html.H5(children='DF table'),
-    # generate_table(df),
-    # html.H5(children='GROUPED table'),
-    # generate_table(grouped),
-
-    # dcc.Graph(
-    #         id='Test graph',
-    #         figure=fig
-    #     )
-
-    # html.H1(children='Movie vote'),
-    # generate_table(movie_vote)
 
 ] + [dcc.Graph(id=str(year), figure=fig(df, year)) for year in range(year_min, year_max+1)]
 )
