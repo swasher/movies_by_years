@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 dash = "*"
 pandas = "*"
+parsel = "*"
 
 [dev-packages]
 
