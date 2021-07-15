@@ -45,7 +45,7 @@ dfkp = pd.read_csv(csv_kp, sep='\t')[["movie", "date_added", "year", "orig_name"
 dfkp['date_added'] = dfkp.apply(lambda x: datetime.strptime(x.date_added, "%d.%m.%Y").year, axis=1)
 
 
-def deduplicate_titles(df):
+def deduplicate_titles(dfkp):
     # Может возникнуть проблема, что у нас есть два фильма с одинаковым названием и одинакового года. Тогда у нас будет не уникальный ключ,
     # и получаем эксепшн при объеденении таблиц. Такие случаи редкие, но есть
     # Остаться в живых - 2006 - Fritt vilt
@@ -53,23 +53,25 @@ def deduplicate_titles(df):
 
     # df[df.index.duplicated()] - показывает, что дублируется
 
-    if len(df[df.index.duplicated()]):
-        pass
+    if len(dfkp[dfkp.index.duplicated()]):
+        dfkp['dedup'] = dfkp.groupby('ind').cumcount().astype(str).str.replace('0', '')
+        dfkp['dedup'] = np.where(dfkp['dedup'] == '', dfkp['year'].astype(str) + '-' + dfkp['movie'],
+        dfkp['year'].astype(str) + '-' + dfkp['movie'] + '-' + dfkp['orig_name'])
+        dfkp.reset_index(drop=True, inplace=True)
+        dfkp.set_index('dedup', inplace=True)
     else:
-        return df
+        return dfkp
 
 
 # Стратегия такая - в обоих датасетах создаем индекс - YEAR+TITLE. И потом по этому индексу объеденяем таблицы.
-dfkp['ind'] = dfkp.year.map(str) + '-' + dfkp.movie
-dfkp.set_index('ind', inplace=True)
-
-# dfkp = deduplicate_titles(dfkp)
-dfkp['dedup'] = dfkp.groupby('ind').cumcount().astype(str).str.replace('0', '')
-dfkp['dedup1'] = np.where(dfkp['dedup']=='', dfkp['year'].astype(str)+'-'+dfkp['movie'], dfkp['year'].astype(str)+'-'+dfkp['movie']+'-'+dfkp['orig_name'])
-##### Теперь нужно dedup1 сделать индексом
-
 movie_list['ind'] = movie_list['Year'] + '-' + movie_list['Title']
 movie_list.set_index('ind', inplace=True)
+
+dfkp['ind'] = dfkp.year.map(str) + '-' + dfkp.movie
+dfkp.set_index('ind', inplace=True)
+dfkp = deduplicate_titles(dfkp)
+
+
 
 # dftmp = pd.merge(dfkp, movie_list, on='ind')
 dftmp = pd.concat([dfkp, movie_list], axis=1, ignore_index=True)
