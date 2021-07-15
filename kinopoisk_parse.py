@@ -22,15 +22,7 @@ row_list = []
 for f in files:
     text = codecs.open(f, "r", "utf-8").read()
     selector = Selector(text=text)
-
     ulli = selector.xpath('//ul[@id="itemList"]/li')
-    # print(ulli)
-    #
-    # a1=ulli[0]
-    # print(a1)
-    # a2=ulli[1]
-    # print('==================')
-    # print(a2)
 
     for x in ulli:
         """
@@ -40,13 +32,11 @@ for f in files:
         https://stackoverflow.com/a/62734983/1334825 - NEVER grow a DataFrame!
         https://stackoverflow.com/a/17496530/1334825 - best method
         """
-        d = {}
-        # movie = x.xpath("div[@class='info']/div/font/a/text()").get() # работает для сохраниний с 25 фильмами
-        d['movie'] = x.xpath("div[@class='info']/a/text()").get()
-        d['date_added'] = x.xpath("span/text()").get()[:10]
-        d['year'] = x.xpath("div[@class='info']/span/text()").re_first(r'\((\d{4})[\)\s]')
-        d['orig_name'] = x.xpath("div[@class='info']/span/text()").re_first(r'.*\s*\(')[:-2]
-        d['number'] = x.xpath("div[@class='number']/text()").get()
+        d = {'movie': x.xpath("div[@class='info']/a/text()").get(), 'date_added_kp': x.xpath("span/text()").get()[:10],
+             'year': x.xpath("div[@class='info']/span/text()").re_first(r'\((\d{4})[\)\s]'),
+             'orig_name': x.xpath("div[@class='info']/span/text()").re_first(r'.*\s*\(')[:-2],
+             'number': x.xpath("div[@class='number']/text()").get()
+             }
         print("{number:>4}  {year:<4}  {date_added:<10}  {movie:<34}  {orig_name:<30}".format(**d))
         row_list.append(d)
 
