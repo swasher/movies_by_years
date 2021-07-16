@@ -14,7 +14,6 @@ from datetime import datetime
 from util import int_or_mean
 
 
-
 csv_list = codecs.open('kinorium_data/backup_76444_movie_list.csv', 'rU', 'UTF-16')
 csv_vote = codecs.open('kinorium_data/backup_76444_votes.csv', 'rU', 'UTF-16')
 
@@ -49,12 +48,15 @@ dfkp['date_added_kp'] = dfkp.apply(lambda x: datetime.strptime(x.date_added_kp, 
 
 
 def deduplicate_titles(dfkp):
-    # Может возникнуть проблема, что у нас есть два фильма с одинаковым названием и одинакового года. Тогда у нас будет не уникальный ключ,
-    # и получаем эксепшн при объеденении таблиц. Такие случаи редкие, но есть
+    # Может возникнуть проблема, что у нас есть два фильма с одинаковым названием и одинакового года. Тогда у нас будет
+    # не уникальный ключ (год+русское название), и получем эксепшн при объеденении таблиц. Такие случаи редкие, но есть:
     # Остаться в живых - 2006 - Fritt vilt
     # Остаться в живых - 2006 - Stay Alive
+    # Поэтому мы к дубликату (2006-Остаться в живых) добавляем англ. название (2006-Остаться в живых-Stay Alive)
+    # TODO написал и понял проблему - если фильм русский, то у него аглийское название пустое
+    # TODO надо, наверное, не выебываться с добавлением английского названия и прост цифру добавлять.
 
-    # df[df.index.duplicated()] - показывает, что дублируется
+    # DEBUG df[df.index.duplicated()] - показывает, что дублируется
 
     if len(dfkp[dfkp.index.duplicated()]):
         dfkp['dedup'] = dfkp.groupby('ind').cumcount().astype(str).str.replace('0', '')
@@ -69,7 +71,7 @@ def deduplicate_titles(dfkp):
 
 
 # Стратегия такая - в обоих датасетах создаем индекс - YEAR+TITLE. И потом по этому индексу объеденяем таблицы.
-movie_list['ind'] = movie_list['Year'] + '-' + movie_list['Title']
+movie_list['ind'] = movie_list.Year + '-' + movie_list.Title
 movie_list.set_index('ind', inplace=True)
 
 dfkp['ind'] = dfkp.year.map(str) + '-' + dfkp.movie
@@ -79,11 +81,9 @@ dfkp = deduplicate_titles(dfkp)
 # Объеденяем кинопоиск и кинориум - только "буду смотреть" по ключу "ind" - это год+название
 df_combined = pd.merge(dfkp, movie_list, on='ind', how="outer")
 
-
-
 """
-На этом этапе слитая таблица df_combined выглядит так. Одинаковые фильмы слились в одну строку. Но есть фильмы, которые только
-в таблице кинопоиска, или только в таблице кинориуме. Соотв. в таких записях мы видим Nan 
+На этом этапе слитая таблица df_combined выглядит так. Одинаковые фильмы слились в одну строку. Но есть фильмы, которые 
+только в таблице кинопоиска, или только в таблице кинориуме. Соотв. в таких записях мы видим Nan 
 -----------------кинопоиск---------------------  |  ----- кинориум ---------
 movie       date_added_kp   year        orig_name   Date        Title   Year
 Стелс		2020.00000		2005.00000	Stealth		2020.00000	Стелс	2005
@@ -95,13 +95,19 @@ nan			nan			    nan			nan			2021.00000	Черный  2020
 nan			nan			    nan			nan			2021.00000	Сек...	2012
 """
 
-df1 = df_combined.assign(Title1=lambda x: x.Title if x.Title is not None else x.movie)
+# df_combined['Title_'] = df_combined['Title'].apply(lambda x: x if x else x.movie)
+
+# Объеденяем столбцы с названиями и годами
+df_combined["Title_"] = df_combined.apply(lambda row: row["Title"] if pd.notna(row["Title"]) else row["movie"], axis=1)
+df_combined["Year_"] = df_combined.apply(lambda row: row["Year"] if pd.notna(row["Year"]) else row["year"], axis=1)
+df_combined = df_combined.astype({"Year_": int}, errors='ignore')  # НЕ РАБОТАЕТ!!!
+
+# TODO Что делать с двойными годами??? По моему, их стоит прсто дропнуть, посколько это почти 100% будет сериал.
+
+pass
 
 
-
-#******************************************
-
-# Объеденяем таблицы
+# Объеденяем таблицы Буду смотреть и Просмотрено
 df = pd.concat([movie_list, movie_vote], axis=0)[["ListTitle", "Date", "Title", "Year"]]
 
 # Переименовываем заголовки ListTitle -> Seen
