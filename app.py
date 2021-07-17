@@ -83,6 +83,7 @@ def fig(df, year):
     bar.update_xaxes(range=[oldest_movie, current_year])
     return bar
 
+
 def total_unseen(dataframe):
     grouped = dataframe.groupby('Date_added').agg(
         # Year=pd.NamedAgg(column='Year'),
@@ -91,7 +92,11 @@ def total_unseen(dataframe):
     )
 
     grouped['Unseen'] = grouped['Total'] - grouped['Seen']
-    return dataframe
+    grouped.reset_index(inplace=True)
+
+    bar = px.bar(grouped, x='Date_added', y=['Unseen'])
+
+    return bar
 
 # Подсчитать, сколько просмотрено/непросмотрено фильмов, выпущенных в определенном году
 # df[df['Seen'] == 0]['Year'].value_counts()
