@@ -7,10 +7,14 @@
 # TODO фильмы-дубликаты - почему их так много в исходном CSV???
 
 import codecs
+from idlelib.iomenu import errors
 
 import numpy as np
 import pandas as pd
 from datetime import datetime
+
+from _brotli import error
+
 from util import int_or_mean
 
 
@@ -101,8 +105,8 @@ nan			nan			    nan			nan			2021.00000	Сек...	2012
 df_combined["Title_"] = df_combined.apply(lambda row: row["Title"] if pd.notna(row["Title"]) else row["movie"], axis=1)
 df_combined["Year_"] = df_combined.apply(lambda row: row["Year"] if pd.notna(row["Year"]) else row["year"], axis=1)
 df_combined = df_combined.astype({"Year_": int}, errors='ignore')  # НЕ РАБОТАЕТ!!!
-
-# TODO Что делать с двойными годами??? По моему, их стоит прсто дропнуть, посколько это почти 100% будет сериал.
+df_combined["Year_"] = pd.to_numeric(df_combined["Year_"], downcast="float", errors="coerce")
+# TODO Что делать с двойными годами??? По моему, их стоит просто дропнуть, посколько это почти 100% будет сериал.
 
 pass
 
