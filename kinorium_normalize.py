@@ -7,14 +7,10 @@
 # TODO фильмы-дубликаты - почему их так много в исходном CSV???
 
 import codecs
-from idlelib.iomenu import errors
 
 import numpy as np
 import pandas as pd
 from datetime import datetime
-
-from _brotli import error
-
 from util import int_or_mean
 
 
@@ -25,12 +21,22 @@ csv_vote = codecs.open('kinorium_data/backup_76444_votes.csv', 'rU', 'UTF-16')
 # Поэтому мы используем две таблицы: LIST - это экспорт всех списков кинориума, нас интересует только один из них - "Буду смотреть"
 # и VOTE - это таблица моих оценок фильмам, соотв. содержит все просмотренные фильмы.
 
-# ListTile - список, в котором фильм, нас интересует только "Буду смотреть", "Date" - дата внесения в таблицу, т.е. просмотра или желания посмотреть
-movie_list = pd.read_csv(csv_list, sep='\t')[["ListTitle", "Date", "Title", "Year"]]
-# Type - ненужный столбец для совместимости по столбцам с movie_list
-movie_vote = pd.read_csv(csv_vote, sep='\t')[["Date", "Title", "Year"]]
 
-# оставляем строки только "буду смотреть" и дропаем этот столбец
+# Vote - таблица с оценками, т.е. это "просмотрено"
+movie_vote = pd.read_csv(csv_vote, sep='\t')[["Date", "Title", "Year"]]
+movie_vote.rename({'Date': 'Date_added'}, inplace=True, axis=1)
+movie_vote['Date_added'] = movie_vote.apply(lambda x: datetime.strptime(x.Date_added, "%Y-%m-%d %H:%M:%S").year, axis=1)
+movie_vote["Year"] = pd.to_numeric(movie_vote["Year"], errors="coerce")
+# Сериалы имеют год типа 2010-2015. После предыдущей команды, когда не удалось год сконвертировать в int,
+# Year получает значение nan. Дропаем эти строки.
+movie_vote.dropna(subset=["Year"], inplace=True)
+movie_vote = movie_vote.astype({"Year": int})
+movie_vote['Seen'] = 1
+
+# ListTile - список, в котором фильм, нас интересует только "Буду смотреть", "Date" - дата внесения в таблицу, т.е. когда фильм добавился в "буду смотреть"
+movie_list = pd.read_csv(csv_list, sep='\t')[["ListTitle", "Date", "Title", "Year"]]
+
+# оставляем строки только те, где ListTitle = "буду смотреть" и дропаем этот столбец
 movie_list = movie_list[movie_list["ListTitle"]=="Буду смотреть"]
 movie_list.drop(columns='ListTitle', inplace=True)
 
@@ -43,7 +49,6 @@ movie_list.drop(columns='temp_column', inplace=True)
 movie_list['Date'] = movie_list.apply(lambda x: datetime.strptime(x.Date, "%Y-%m-%d %H:%M:%S").year, axis=1)
 movie_list.rename({'Date': 'date_added_kinor'})
 
-# ====================================================
 # инжектим данные кинопоиска в movie_list (т.е. в таблицу непросмотренных фильмов)
 csv_kp = codecs.open('csv/kinopoisk_unseen.csv', 'rU', 'UTF-8')
 dfkp = pd.read_csv(csv_kp, sep='\t')[["movie", "date_added_kp", "year", "orig_name"]]
@@ -82,8 +87,8 @@ dfkp['ind'] = dfkp.year.map(str) + '-' + dfkp.movie
 dfkp.set_index('ind', inplace=True)
 dfkp = deduplicate_titles(dfkp)
 
-# Объеденяем кинопоиск и кинориум - только "буду смотреть" по ключу "ind" - это год+название
-df_combined = pd.merge(dfkp, movie_list, on='ind', how="outer")
+# Объеденяем кинопоиск и кинориум по ключу "ind" - это год+название
+df_unseen = pd.merge(dfkp, movie_list, on='ind', how="outer")
 
 """
 На этом этапе слитая таблица df_combined выглядит так. Одинаковые фильмы слились в одну строку. Но есть фильмы, которые 
@@ -99,38 +104,32 @@ nan			nan			    nan			nan			2021.00000	Черный  2020
 nan			nan			    nan			nan			2021.00000	Сек...	2012
 """
 
-# df_combined['Title_'] = df_combined['Title'].apply(lambda x: x if x else x.movie)
-
 # Объеденяем столбцы с названиями и годами
-df_combined["Title_"] = df_combined.apply(lambda row: row["Title"] if pd.notna(row["Title"]) else row["movie"], axis=1)
-df_combined["Year_"] = df_combined.apply(lambda row: row["Year"] if pd.notna(row["Year"]) else row["year"], axis=1)
-df_combined = df_combined.astype({"Year_": int}, errors='ignore')  # НЕ РАБОТАЕТ!!!
-df_combined["Year_"] = pd.to_numeric(df_combined["Year_"], downcast="float", errors="coerce")
-# TODO Что делать с двойными годами??? По моему, их стоит просто дропнуть, посколько это почти 100% будет сериал.
+df_unseen["Date_added_"] = df_unseen.apply(lambda row: row["date_added_kp"] if pd.notna(row["date_added_kp"]) else row["Date"], axis=1)
+df_unseen["Title_"] = df_unseen.apply(lambda row: row["Title"] if pd.notna(row["Title"]) else row["movie"], axis=1)
+df_unseen["Year_"] = df_unseen.apply(lambda row: row["Year"] if pd.notna(row["Year"]) else row["year"], axis=1)
 
-pass
+df_unseen["Year_"] = pd.to_numeric(df_unseen["Year_"], errors="coerce")
+
+# Сериалы имеют год типа 2010-2015. После предыдущей команды, когда не удалось год сконвертировать в int,
+# Year_ получает значение nan. Дропаем эти строки.
+df_unseen.dropna(subset=["Year_"], inplace=True)
+#  Заодно дропаем "пустые строки" с нулями (это багованые строки - написал маляву в кинориум, ответили что это типа
+# "удаленные из базы фильмы, которые у меня были в списках", имхо чушь
+df_unseen.drop(labels=np.nan, inplace=True)
+
+# И превращаем год в int, чтобы не было нулей (2021.0000).
+df_unseen = df_unseen.astype({"Year_": int})
+df_unseen = df_unseen.astype({"Date_added_": int})
+
+# дропаем ненужные  столбцы, и на этом месте у нас полностью готовая таблицы "непросмотренных" фильмов
+df_unseen.drop(['movie', 'date_added_kp', 'year', 'orig_name', 'Date', 'Title', 'Year'], axis=1, inplace=True)
+df_unseen.rename(columns={'Date_added_': 'Date_added', 'Title_': 'Title', 'Year_': 'Year'}, inplace=True)
+df_unseen['Seen'] = 0
 
 
 # Объеденяем таблицы Буду смотреть и Просмотрено
-df = pd.concat([movie_list, movie_vote], axis=0)[["ListTitle", "Date", "Title", "Year"]]
-
-# Переименовываем заголовки ListTitle -> Seen
-df.columns = ["Seen", "Date", "Title", "Year"]
-
-# Устанавливаем значения поля Seen в 0 или 1 (0 - непросмотрено)
-df.loc[df.Seen == 'Буду смотреть', 'Seen'] = 0
-df.loc[pd.isna(df['Seen']), 'Seen'] = 1
-
-
-
-# двойные даты в years: для Шерлока, напр., 2010-2017 - ВЫЧИСЛЯЕМ СРЕДНЕЕ АРИФМЕТИЧЕСКОЕ
-df['Year'] = df['Year'].apply(lambda x: int_or_mean(x))
-
-# удаляем записи, где год=0 (это багованые строки) - написал маляву в кинориум
-# df = df[df.Year != '0']
-# or - check speed
-df.drop(df.loc[df['Year']=='0'].index, inplace=True)
-
+df = pd.concat([df_unseen, movie_vote], axis=0)[["Date_added", "Title", "Year", "Seen"]]
 
 
 # экспорт

@@ -29,8 +29,8 @@ df = pd.read_csv('csv/normalized_data.csv')
 
 
 # Находим минимальный и максимальный года в Date - мы будем строить отчеты для каждого из этих годов
-year_min = min(df['Date'])
-year_max = max(df['Date'])
+year_min = min(df['Date_added'])
+year_max = max(df['Date_added'])
 
 
 # Находим самый старый фильм и текущий год
@@ -38,15 +38,15 @@ oldest_movie = int(min(df['Year']))
 current_year = datetime.now().year
 
 
-def make_grouped(df, slice_by_year):
+def make_grouped(dataframe, slice_by_year):
     """
     Берет "сырой" dataframe df и возвращает датафрейм для графика (см. ниже), обрезанный по году,
     типа, "какое было состояние просмотров в таком-то году"
-    :param df:
+    :param dataframe:
     :param slice_by_year:
     :return:
     """
-    sliced = df[df.Date <= slice_by_year]
+    sliced = dataframe[dataframe.Date_added <= slice_by_year]
 
     grouped = sliced.groupby('Year').agg(
         # Year=pd.NamedAgg(column='Year'),
@@ -75,13 +75,23 @@ def fig(df, year):
     bar = px.bar(grouped, x='Year', y=['Seen', 'Unseen'])
     bar.update_xaxes(title_text=str(year)+' YEAR')
     bar.update_xaxes(title_font_size=20)
-    # TODO цифра 500 прибита гвоздями, нужно подумать, как ее вычислять. Это нужно для того, чтобы графики за все года
+    bar.update_xaxes(dtick=1)
+    # TODO цифра 400 прибита гвоздями, нужно подумать, как ее вычислять. Это нужно для того, чтобы графики за все года
     # TODO имели одинаковый масштаб по высоте
-    bar.update_layout(yaxis_range=[0, 500])
+    bar.update_layout(yaxis_range=[0, 400])
     # bar.update_layout(xaxis_range=[0, current_year-oldest_movie])
-    bar.update_xaxes(range=[oldest_movie, current_year+1])
+    bar.update_xaxes(range=[oldest_movie, current_year])
     return bar
 
+def total_unseen(dataframe):
+    grouped = dataframe.groupby('Date_added').agg(
+        # Year=pd.NamedAgg(column='Year'),
+        Total=pd.NamedAgg(column='Seen', aggfunc='count'),  # тотал считает seen+unseen - правильно!
+        Seen=pd.NamedAgg(column='Seen', aggfunc='sum'),     # sum считает сумму - т.е. кол-во едениц - получется кол-во просмотренных - правильно!
+    )
+
+    grouped['Unseen'] = grouped['Total'] - grouped['Seen']
+    return dataframe
 
 # Подсчитать, сколько просмотрено/непросмотрено фильмов, выпущенных в определенном году
 # df[df['Seen'] == 0]['Year'].value_counts()
@@ -91,11 +101,14 @@ external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+server = app.server
 
 
 app.layout = html.Div(children=[
     html.Plaintext(children='min year: '+str(year_min)+', max year: '+str(year_max)),
     html.Plaintext(children='oldest movie: '+str(oldest_movie)+', current year: '+str(current_year)),
+
+    dcc.Graph(id="111", figure=total_unseen(df))
 
 ] + [dcc.Graph(id=str(year), figure=fig(df, year)) for year in range(year_min, year_max+1)]
 )
